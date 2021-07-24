@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, user-scalable=no, initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0">
+    <meta http-equiv="X-UA-Compatible" content="ie=edge">
+    <title>Home</title> 
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.0.2/dist/css/bootstrap.min.css" rel="stylesheet" integrity="sha384-EVSTQN3/azprG1Anm3QDgpJLIm9Nao0Yz1ztcQTwFspd3yD65VohhpuuCOmLASjC" crossorigin="anonymous">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/notie/4.3.1/notie.min.css" integrity="sha512-UrjLcAek5jbj1vwGbXkviPHtgSNVNQCedX7cBIMDdSI2iZtUcZcoTh2Sqc8R9mVcijOjFUi1IlxhfrE1uWaIog==" crossorigin="anonymous" referrerpolicy="no-referrer" />
+    <style>
+        .chatbox {
+            outline: 1px solid silver;
+            min-height: 160px;
+            padding: 0.5em;
+        }
+    </style>
+</head>
+<body>
+<div class="container">
+    <div class="row">
+        <div class="col">
+            <h1 class="mt-3">This is the home page</h1>
+            <hr>
+        </div>
+    </div>
+
+    <div class="row">
+        <div class="col-md-8">
+            <h3>Chat</h3>
+            <p><a href="https://github.com">Go to github</a></p>
+
+            <!-- username -->
+            <div class="form-group">
+                <label for="username">Username:</label>
+                <input type="text" name="username" id="username" class="form-control" autocomplete="off">
+            </div>
+
+            <!-- message -->
+            <div class="form-group">
+                <label for="message">Message:</label>
+                <input type="text" name="message" id="message" class="form-control" autocomplete="off">
+            </div>
+
+            <hr>
+            <a href="javascript:void(0);" class="btn btn-outline-secondary" id="sendBtn">Send Message</a>
+
+            <!-- action type -->
+            <input type="hidden" name="action" id="action">
+
+            <div id="status" class="mt-2 float-end">
+
+            </div>
+
+            <!-- chatbox -->
+            <div id="output" class="chatbox mt-3">
+
+            </div>
+        </div>
+        <div class="col-md-4">
+            <h3>Who's Online</h3>
+            <ul id="online_users"></ul>
+        </div>
+    </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.0.2/dist/js/bootstrap.bundle.min.js" integrity="sha384-MrcW6ZMFYlzcLA8Nl+NtUVF0sA7MsXsP1UyJoMp4YLEuNSfAP+JcXn/tWtIaxVXM" crossorigin="anonymous"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/notie/4.3.1/notie.min.js" integrity="sha512-NHRCwRf2LnVSlLDejCA9oS3fG3/FLSQIPCjAWl3M7tVi5wszwr6FxkjotWnQDXLE+aLKcxRrzFDNEgXj9nvkPw==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+<script src="/static/reconnecting-websocket.min.js"></script>
+<script>
+    let socket = null;
+    let o = document.getElementById("output")
+    let userField = document.getElementById("username")
+    let messageField = document.getElementById("message")
+
+    // execute before user leaves page (eg user opens tab, closes window, etc)
+    window.onbeforeunload = function() {
+        console.log("Leaving");
+        let jsonData = {};
+        jsonData["action"] = "left";
+        socket.send(JSON.stringify(jsonData));
+    }
+
+
+    // execute function after the dom is loaded into the page
+    document.addEventListener("DOMContentLoaded", function() {
+        // use wss for secure connection
+        socket = new ReconnectingWebSocket("ws://127.0.0.1:8080/ws", null, {debug: true, reconnectInterval: 3000});
+
+        const offline = `<span class="badge bg-danger">Not Connected</span>`;
+        const online = `<span class="badge bg-success">Connected</span>`;
+        let statusDiv = document.getElementById("status");
+
+        socket.onopen = () => {
+            console.log("Successfully connected");
+            statusDiv.innerHTML = online;
+        }
+
+        socket.onclose = () => {
+            console.log("Connection closed");
+            statusDiv.innerHTML = offline;
+        }
+
+        socket.onerror = error => {
+            console.log("There was an error");
+            // assumes every error case if offline. 
+            statusDiv.innerHTML = offline;
+        }
+
+        socket.onmessage = msg => {
+            // get message as json 
+            //console.log(msg);
+            // parse msg 
+            //let j = JSON.parse(msg.data);
+            //console.log(j);    
+
+            // ignore empty messages 
+            if (msg === null) { return }
+
+            let data = JSON.parse(msg.data);
+
+            console.log("Action is", data.action);
+
+            switch (data.action) {
+                case "list_users":
+                    let ul = document.getElementById("online_users");
+                    while (ul.firstChild) ul.removeChild(ul.firstChild);
+
+                    // ignore if connected_users is null
+                    if (data.connected_users === null) { return }
+                    // add users to li tags
+                    if (data.connected_users.length > 0) {
+                        data.connected_users.forEach(function(item) {
+                            let li = document.createElement("li");
+                            li.appendChild(document.createTextNode(item));
+                            ul.appendChild(li);
+                        })
+                    }
+                    break;
+
+                case "broadcast":
+                    o.innerHTML = o.innerHTML + data.message + "<br>";
+                    break;
+            }
+        }
+
+        // Send user data to server when user fills out form.
+        // when there is a change to the userInput 
+        userField.addEventListener("change", function() {
+            let jsonData = {};
+            jsonData["action"] = "username";
+            // this.value = the value of the form control
+            jsonData["username"] = this.value; 
+            // send off to server 
+            socket.send(JSON.stringify(jsonData));
+        })
+
+        messageField.addEventListener("keydown", function(event) {
+            // if user presses enter key
+            if (event.code === "Enter") {
+                if (!socket) {
+                    console.log("no connection");
+                    return false;
+                }
+
+                // check if user and message fields are empty
+                if ((userField.value === "") || (messageField.value === "")) {
+                    //alert ("fill out user and message");
+                    errorMessage("Fill out username and message");
+                    return false;
+                } else {
+                    sendMessage();
+                }
+
+                // dont try to submit form
+                event.preventDefault();
+                event.stopPropagation();
+            }
+        })
+
+        document.getElementById("sendBtn").addEventListener("click", function() {
+            if ((userField.value === "") || (messageField.value === "")) {
+                //alert ("fill out user and message");
+                errorMessage("Fill out username and message");
+                return false;
+            } else {
+                sendMessage();
+            }
+        })
+    })
+
+    function sendMessage() {
+        let jsonData = {}; 
+        // broadcast to all usrs
+        jsonData["action"] = "broadcast";
+        //jsonData["username"] = document.getElementById("username").value;
+        jsonData["username"] = userField.value;
+        //jsonData["message"] = document.getElementById("message").value;
+        jsonData["message"] = messageField.value;
+        socket.send(JSON.stringify(jsonData));
+        // reset message input to empty
+        // document.getElementById("message").value = "";
+        messageField.value = "";
+    }
+
+    function errorMessage(msg) {
+        notie.alert({
+            type: 'error',
+            text: msg,
+        })
+    }
+</script>
+</body>
+</html>
